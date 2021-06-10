@@ -17,6 +17,7 @@ app.use(bodyParser.json())
 let creds = JSON.parse(fs.readFileSync(".creds"))
 let known_users = {}
 let known_keys = {}
+let cached_states = {}
 
 const AUTH_ENDPOINT = "https://api.vivokey.com/openid/authorize/"
 const TOKEN_ENDPOINT = "https://api.vivokey.com/openid/token/"
@@ -112,21 +113,37 @@ function getKey(header, callback){
 	})
 }
 
+function genState(){
+	let stateString = uuidv4()
+	cached_states[stateString] = Date.now()
+	setTimeout(()=>{
+		console.log("Login state expired")
+		try{
+			delete cached_states[stateString]
+		} catch {
+			// Do nothing
+		}
+	}, 120000)
+	return stateString
+}
+
 app.get("/oauth/", (req, res) => {
 	res.send("<a href='/oauth/login'>Log In</a>")
 })
 app.get("/oauth/login", (req, res) => {
 	let redirect_url = encodeURIComponent(`https://mimir.sircinnamon.ca/oauth/rcv`)
 	let scope = "openid%20profile%20email"
-	let state = "randomizeme"
+	let state = genState()
 	let loc = `${AUTH_ENDPOINT}?response_type=code&client_id=${creds.client_id}&redirect_uri=${redirect_url}&scope=${scope}&state=${state}`
 	res.set("Location", loc)
 	res.sendStatus(307)
 })
 app.get("/oauth/rcv", (req, res) => {
 	// console.log(req.query)
-	if(req.query.state !== "randomizeme"){
+	if(!cached_states[req.query.state]){
 		res.return(401)
+	} else {
+		delete cached_states[req.query.state]
 	}
 	let code = req.query.code
 	let redirect_url = encodeURIComponent(`https://mimir.sircinnamon.ca/oauth/rcv`)
